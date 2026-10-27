@@ -1,17 +1,4 @@
 <?php
-/**
- * RELIEFFLOW LOGISTICS & INVENTORY SYSTEM
- * ============================================================
- * Smartech-inspired Soft Rounded Design System (Full-Screen Edition):
- * - Full-Screen Fluid Viewport Layout (100vw x 100vh) with Fullscreen Mode Toggle
- * - Fully Interactive Monthly Calendar Widget (Prev/Next navigation, live date selection)
- * - Dynamic Upcoming Events System (CRUD, status updates, detail modals)
- * - Warm Cream Canvas (#F5EDE3) with Muted Rose-Taupe Cards (#DCC5C9)
- * - Lighter Cream Pill-shaped List Rows (#F5EDE3) & White Cut-out Active Nav Pill
- * - Darker Plum Statistics Panel (#9B7A94) with Ring Progress Charts
- * - ZERO Emojis: 100% Consistent Lucide SVG Line Icons (1.5-2px stroke)
- * - Accessible (WCAG AA), responsive, touch-friendly (>=44px tap targets)
- */
 
 declare(strict_types=1);
 date_default_timezone_set('Asia/Manila');
@@ -43,8 +30,11 @@ function h(mixed $value): string {
 }
 
 if (!function_exists('redirect')) {
-function redirect(string $section = 'dashboard', string $message = '', string $type = 'success', array $extraParams = []): never {
+function redirect(string $section = 'dashboard', string $message = '', string $type = 'success', array $extraParams = []) {
     $url = strtok($_SERVER['REQUEST_URI'] ?? 'index.php', '?');
+    if (!$url || $url === '') {
+        $url = 'index.php';
+    }
     $params = array_merge(['section' => $section], $extraParams);
     if ($message !== '') {
         $params['message'] = $message;
@@ -71,11 +61,11 @@ if (!function_exists('logActivity')) {
 function logActivity(PDO $conn, string $action, int $status, int $userId, ?int $donationId = null): void {
     try {
         $stmt = $conn->prepare(
-            "INSERT INTO activityLogs (action, status, timestamp, user_id, donation_id)
+            "INSERT INTO activitylogs (action, status, timestamp, user_id, donation_id)
              VALUES (?, ?, NOW(), ?, ?)"
         );
         $stmt->execute([$action, $status, $userId, $donationId]);
-    } catch (Throwable) {}
+    } catch (Throwable $e) {}
 }
 }
 
@@ -1961,7 +1951,7 @@ try {
                 <i data-lucide="bell" style="width:18px;height:18px;stroke-width:2;"></i>
                 <span>Notifications</span>
             </a>
-            <a href="?section=activityLogs" class="nav-item-pill <?=($section === 'activityLogs') ? 'active' : ''?>">
+            <a href="?section=activityLogs" class="nav-item-pill <?=($section === 'activityLogs' || $section === 'activitylogs') ? 'active' : ''?>">
                 <i data-lucide="clipboard-list" style="width:18px;height:18px;stroke-width:2;"></i>
                 <span>Activity Logs</span>
             </a>
@@ -2028,16 +2018,29 @@ try {
                     </div>
                 </div>
 
+                <!-- Direct Mobile Logout Button -->
+                <a href="?logout=1" class="circle-action-btn d-inline-flex d-md-none text-danger" title="Log out" aria-label="Log out" style="color: #dc2626;">
+                    <i data-lucide="log-out" style="width:18px;height:18px;stroke-width:2;"></i>
+                </a>
+
                 <!-- Kebab Menu -->
                 <div class="dropdown">
                     <button class="circle-action-btn" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Quick Actions">
                         <i data-lucide="more-vertical" style="width:18px;height:18px;stroke-width:2;"></i>
                     </button>
-                    <ul class="dropdown-menu dropdown-menu-end shadow border-0 p-2" style="background: var(--container-cream); border-radius: 16px;">
+                    <ul class="dropdown-menu dropdown-menu-end shadow border-0 p-2" style="background: var(--container-cream); border-radius: 16px; min-width: 200px;">
                         <li><a class="dropdown-item rounded-pill py-2" href="javascript:void(0)" data-bs-toggle="modal" data-bs-target="#modalAddDonation">Record Donation</a></li>
                         <li><a class="dropdown-item rounded-pill py-2" href="javascript:void(0)" data-bs-toggle="modal" data-bs-target="#modalAddEvent">Schedule Distribution</a></li>
                         <li><a class="dropdown-item rounded-pill py-2" href="?section=categories">Manage Categories</a></li>
+                        <li><a class="dropdown-item rounded-pill py-2" href="?section=activityLogs">Activity Logs</a></li>
                         <li><a class="dropdown-item rounded-pill py-2" href="?section=profile">My Profile</a></li>
+                        <li><hr class="dropdown-divider my-1" style="border-color: rgba(155, 122, 148, 0.2);"></li>
+                        <li>
+                            <a class="dropdown-item rounded-pill py-2 text-danger fw-bold d-flex align-items-center gap-2" href="?logout=1">
+                                <i data-lucide="log-out" style="width:16px;height:16px;stroke-width:2;"></i>
+                                <span>Log out</span>
+                            </a>
+                        </li>
                     </ul>
                 </div>
             </div>
@@ -2839,21 +2842,29 @@ try {
         /* ------------------------------------------------------------
            ACTIVITY LOGS VIEW
         ------------------------------------------------------------ */
-        elseif ($section === 'activityLogs'):
+        elseif ($section === 'activityLogs' || $section === 'activitylogs'):
             $filterAct = trim((string)($_GET['filter_action'] ?? ''));
             $logSql = "SELECT al.*, u.username, d.item_name
-                       FROM activityLogs al
+                       FROM activitylogs al
                        LEFT JOIN users u ON u.user_id = al.user_id
                        LEFT JOIN donations d ON d.donation_id = al.donation_id";
             $logParams = [];
             if ($filterAct !== '') {
-                $logSql .= " WHERE al.action = ?";
-                $logParams[] = $filterAct;
+                if ($filterAct === 'STATUS_CHANGE') {
+                    $logSql .= " WHERE al.action LIKE 'STATUS_CHANGE%'";
+                } else {
+                    $logSql .= " WHERE al.action = ?";
+                    $logParams[] = $filterAct;
+                }
             }
             $logSql .= " ORDER BY al.log_id DESC LIMIT 50";
-            $lstmt = $conn->prepare($logSql);
-            $lstmt->execute($logParams);
-            $logsList = $lstmt->fetchAll(PDO::FETCH_ASSOC);
+            try {
+                $lstmt = $conn->prepare($logSql);
+                $lstmt->execute($logParams);
+                $logsList = $lstmt->fetchAll(PDO::FETCH_ASSOC);
+            } catch (Throwable $e) {
+                $logsList = [];
+            }
         ?>
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <div>
@@ -2866,6 +2877,7 @@ try {
                         <option value="">All Actions</option>
                         <option value="CREATED_DONATION" <?=$filterAct === 'CREATED_DONATION' ? 'selected' : ''?>>Donations Created</option>
                         <option value="UPDATED_DONATION" <?=$filterAct === 'UPDATED_DONATION' ? 'selected' : ''?>>Donations Updated</option>
+                        <option value="STATUS_CHANGE" <?=$filterAct === 'STATUS_CHANGE' ? 'selected' : ''?>>Status Updates</option>
                         <option value="DELETED_DONATION" <?=$filterAct === 'DELETED_DONATION' ? 'selected' : ''?>>Donations Deleted</option>
                         <option value="SCHEDULED_EVENT" <?=$filterAct === 'SCHEDULED_EVENT' ? 'selected' : ''?>>Events Scheduled</option>
                         <option value="USER_LOGIN" <?=$filterAct === 'USER_LOGIN' ? 'selected' : ''?>>Staff Logins</option>
@@ -2888,6 +2900,49 @@ try {
                         <?php if (empty($logsList)): ?>
                             <tr><td colspan="5" class="text-center text-muted py-5">No audit logs found.</td></tr>
                         <?php else: foreach ($logsList as $lg): ?>
+                            <?php
+                            $act = (string)($lg['action'] ?? '');
+                            $actLabel = $act;
+                            $actBadgeStyle = 'background: rgba(155, 122, 148, 0.15); color: var(--panel-plum);';
+                            if (strpos($act, 'STATUS_CHANGE_TO_') === 0) {
+                                $newSt = str_replace('STATUS_CHANGE_TO_', '', $act);
+                                $actLabel = 'Status: ' . $newSt;
+                                $actBadgeStyle = 'background: #E0F2FE; color: #0369A1;';
+                            } elseif ($act === 'CREATED_DONATION') {
+                                $actLabel = 'Donation Created';
+                                $actBadgeStyle = 'background: #DCFCE7; color: #166534;';
+                            } elseif ($act === 'UPDATED_DONATION') {
+                                $actLabel = 'Donation Updated';
+                                $actBadgeStyle = 'background: #FEF3C7; color: #92400E;';
+                            } elseif ($act === 'DELETED_DONATION') {
+                                $actLabel = 'Donation Deleted';
+                                $actBadgeStyle = 'background: #FEE2E2; color: #991B1B;';
+                            } elseif ($act === 'USER_LOGIN') {
+                                $actLabel = 'Staff Login';
+                                $actBadgeStyle = 'background: #F3E8FF; color: #6B21A8;';
+                            } elseif ($act === 'SCHEDULED_EVENT') {
+                                $actLabel = 'Event Scheduled';
+                                $actBadgeStyle = 'background: #EDE9FE; color: #5B21B6;';
+                            }
+
+                            // Determine Target Supply column content
+                            $target = '—';
+                            if (!empty($lg['item_name'])) {
+                                $target = $lg['item_name'];
+                            } elseif (!empty($lg['donation_id'])) {
+                                $target = '#DON-' . $lg['donation_id'];
+                            } elseif ($act === 'USER_LOGIN') {
+                                $target = 'Login Session';
+                            } elseif (strpos($act, 'CATEGORY') !== false) {
+                                $target = 'Category Setting';
+                            } elseif (strpos($act, 'DONOR') !== false) {
+                                $target = 'Donor Contributor';
+                            } elseif (strpos($act, 'EVENT') !== false) {
+                                $target = 'Relief Event';
+                            } elseif (strpos($act, 'PROFILE') !== false || strpos($act, 'PASSWORD') !== false) {
+                                $target = 'User Account';
+                            }
+                            ?>
                             <tr>
                                 <td class="small text-muted"><?=date('M j, Y, g:i A', strtotime($lg['timestamp']))?></td>
                                 <td>
@@ -2896,11 +2951,11 @@ try {
                                     </span>
                                 </td>
                                 <td>
-                                    <span class="badge rounded-pill" style="background: rgba(155, 122, 148, 0.15); color: var(--panel-plum); font-weight: 800;">
-                                        <?=h($lg['action'])?>
+                                    <span class="badge rounded-pill" style="<?=$actBadgeStyle?> font-weight: 800;">
+                                        <?=h($actLabel)?>
                                     </span>
                                 </td>
-                                <td><?=h($lg['item_name'] ?: ($lg['donation_id'] ? '#DON-' . $lg['donation_id'] : '—'))?></td>
+                                <td><?=h($target)?></td>
                                 <td><span class="badge-status-pill badge-status-received"><i data-lucide="check" style="width:12px;height:12px;stroke-width:2.5;"></i> Success</span></td>
                             </tr>
                         <?php endforeach; endif; ?>
@@ -2971,6 +3026,20 @@ try {
                                 Update Password
                             </button>
                         </form>
+                    </div>
+                </div>
+
+                <!-- Account Session & Sign Out Card (Accessible on All Devices & Mobile) -->
+                <div class="col-12">
+                    <div class="card-smartech d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center gap-3">
+                        <div>
+                            <h3 class="h6 fw-bold m-0 text-danger">Sign Out of Session</h3>
+                            <div class="small text-muted">Currently active session for <strong><?=h($userData['username'] ?? $currentUsername)?></strong> (<?=h($userData['email'] ?? '')?>).</div>
+                        </div>
+                        <a href="?logout=1" class="btn btn-outline-danger rounded-pill px-4 py-2 fw-bold d-inline-flex align-items-center gap-2">
+                            <i data-lucide="log-out" style="width:16px;height:16px;stroke-width:2;"></i>
+                            <span>Log out</span>
+                        </a>
                     </div>
                 </div>
             </div>
